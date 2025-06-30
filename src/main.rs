@@ -167,48 +167,27 @@ fn generate_keypair() -> PoemResult<Response> {
 }
 
 #[handler]
-fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiResponse>> {
+fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Response> {
     info!("Creating token: mint = {}, authority = {}", payload.mint, payload.mintAuthority);
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Parse mint_authority
+    match std::panic::catch_unwind(|| {
         let mint_authority = match SolanaPubkey::from_str(&payload.mintAuthority) {
             Ok(pubkey) => pubkey,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid mint authority pubkey".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid mint authority pubkey"),
         };
-
-        // Parse mint
         let mint = match SolanaPubkey::from_str(&payload.mint) {
             Ok(pubkey) => pubkey,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid mint pubkey".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid mint pubkey"),
         };
-
-        // Create initialize_mint instruction
         let instruction = match token_instruction::initialize_mint(
             &TOKEN_PROGRAM_ID,
             &mint,
             &mint_authority,
-            None, // freeze_authority
+            None,
             payload.decimals,
         ) {
             Ok(instr) => instr,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Failed to create token instruction".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Failed to create token instruction"),
         };
-
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
             AccountMetaResponse {
                 pubkey: account.pubkey.to_string(),
@@ -216,25 +195,21 @@ fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiR
                 is_writable: account.is_writable,
             }
         }).collect();
-
         let instruction_data = base64::encode(&instruction.data);
-
-        Ok(Json(ApiResponse::TokenSuccess {
+        success_response(ApiResponse::TokenSuccess {
             success: true,
             data: TokenCreateResponse {
                 program_id: instruction.program_id.to_string(),
                 accounts,
                 instruction_data,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to create token instruction".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to create token instruction")),
     }
 }
+
 #[handler]
 fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Response> {
     match std::panic::catch_unwind(|| {
@@ -282,67 +257,40 @@ fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Response> {
         Err(_) => Ok(error_response("Failed to create mint token instruction")),
     }
 }
-#[handler]
-fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Json<ApiResponse>> {
-    // Check for missing fields
-    if payload.message.is_empty() || payload.secret.is_empty() {
-        return Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Missing required fields".to_string(),
-        }));
-    }
 
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Decode the base58 secret key
+#[handler]
+fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Response> {
+    if payload.message.is_empty() || payload.secret.is_empty() {
+        return Ok(error_response("Missing required fields"));
+    }
+    match std::panic::catch_unwind(|| {
         let secret_bytes = match payload.secret.from_base58() {
             Ok(bytes) => bytes,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid base58 secret key".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid base58 secret key"),
         };
-
-        // Ensure the secret key is exactly 64 bytes
         if secret_bytes.len() != 64 {
-            return Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Invalid secret key length".to_string(),
-            }));
+            return error_response("Invalid secret key length");
         }
-
-        // Create keypair from secret bytes
         let keypair = match Keypair::from_bytes(&secret_bytes) {
             Ok(kp) => kp,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Failed to create keypair from secret".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Failed to create keypair from secret"),
         };
-
-        // Sign the message
         let message_bytes = payload.message.as_bytes();
         let signature = keypair.sign_message(message_bytes);
-
-        Ok(Json(ApiResponse::SignMessageSuccess {
+        success_response(ApiResponse::SignMessageSuccess {
             success: true,
             data: SignMessageResponse {
                 signature: base64::encode(signature.as_ref()),
                 public_key: keypair.pubkey().to_string(),
                 message: payload.message,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to sign message".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to sign message")),
     }
 }
+
 #[handler]
 fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Json<ApiResponse>> {
     // Check for missing fields
