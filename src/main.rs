@@ -589,11 +589,11 @@ fn home() -> String {
 async fn main() -> Result<(), std::io::Error> {
     let app = Route::new()
         .at("/", get(home))
-        .at("/keypair", post(generate_keypair));
+        .at("/keypair", post(generate_keypair))
         // .at("/token/create", post(create_token))
         // .at("/token/mint", post(mint_token))
-        // .at("/message/sign", post(sign_message))
-        // .at("/message/verify", post(verify_message))
+        .at("/message/sign", post(sign_message))
+        .at("/message/verify", post(verify_message));
         // .at("/send/sol", post(send_sol))
         // .at("/send/token", post(send_token));
 
