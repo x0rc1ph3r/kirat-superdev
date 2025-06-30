@@ -13,7 +13,7 @@ use solana_sdk::{
 use spl_token::{
     instruction as token_instruction, solana_program::pubkey::Pubkey, ID as TOKEN_PROGRAM_ID
 };
-use base58::ToBase58;
+use base58::{ToBase58, FromBase58};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -38,7 +38,18 @@ pub struct MintTokenRequest {
     pub amount: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct SignMessageRequest {
+    pub message: String,
+    pub secret: String,
+}
 
+#[derive(Serialize, Deserialize)]
+pub struct SignMessageResponse {
+    pub signature: String,
+    pub public_key: String,
+    pub message: String,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct AccountMetaResponse {
@@ -54,7 +65,6 @@ pub struct TokenCreateResponse {
     pub instruction_data: String,
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct TokenMintResponse {
     pub program_id: String,
@@ -62,13 +72,13 @@ pub struct TokenMintResponse {
     pub instruction_data: String,
 }
 
-
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum ApiResponse {
     Success { success: bool, data: KeypairResponse },
     TokenSuccess { success: bool, data: TokenCreateResponse },
     TokenMintSuccess { success: bool, data: TokenMintResponse },
+    SignMessageSuccess { success: bool, data: SignMessageResponse },
     Error { success: bool, error: String },
 }
 
@@ -207,6 +217,60 @@ fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiRespo
     }
 }
 
+#[handler]
+fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Json<ApiResponse>> {
+    // Check for missing fields
+    if payload.message.is_empty() || payload.secret.is_empty() {
+        return Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Missing required fields".to_string(),
+        }));
+    }
+
+    match std::panic::catch_unwind(|| -> Result<SignMessageResponse, String> {
+        // Decode the base58 secret key
+        let secret_bytes = payload.secret.from_base58()
+            .map_err(|_| "Invalid base58 secret key".to_string())?;
+        
+        // Ensure the secret key is exactly 64 bytes
+        if secret_bytes.len() != 64 {
+            return Err("Invalid secret key length".to_string());
+        }
+
+        // Create keypair from secret bytes
+        let keypair = Keypair::from_bytes(&secret_bytes)
+            .map_err(|_| "Failed to create keypair from secret".to_string())?;
+
+        // Sign the message
+        let message_bytes = payload.message.as_bytes();
+        let signature = keypair.sign_message(message_bytes);
+
+        Ok(SignMessageResponse {
+            signature: base64::encode(&signature.as_ref()),
+            public_key: keypair.pubkey().to_string(),
+            message: payload.message,
+        })
+    }) {
+        Ok(Ok(response)) => {
+            Ok(Json(ApiResponse::SignMessageSuccess {
+                success: true,
+                data: response,
+            }))
+        }
+        Ok(Err(error_msg)) => {
+            Ok(Json(ApiResponse::Error {
+                success: false,
+                error: error_msg,
+            }))
+        }
+        Err(_) => {
+            Ok(Json(ApiResponse::Error {
+                success: false,
+                error: "Failed to sign message".to_string(),
+            }))
+        }
+    }
+}
 
 #[handler]
 fn home() -> String {
@@ -221,7 +285,8 @@ async fn main() -> Result<(), std::io::Error> {
         .at("/", get(home))
         .at("/generate_keypair", post(generate_keypair))
         .at("/token/create", post(create_token))
-        .at("/token/mint", post(mint_token));
+        .at("/token/mint", post(mint_token))
+        .at("/message/sign", post(sign_message));
 
     println!("running at http://0.0.0.0:3000");
     Server::new(TcpListener::bind("0.0.0.0:3000"))
