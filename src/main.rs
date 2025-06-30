@@ -5,7 +5,8 @@ use poem::{
     web::{Json},
     Result as PoemResult,
 };
-
+use poem::http::StatusCode;
+use poem::Response;
 use solana_sdk::{
     signature::{Keypair, Signer, Signature},
     instruction::{AccountMeta, Instruction},
@@ -126,29 +127,42 @@ pub enum ApiResponse {
     Error { success: bool, error: String },
 }
 
+fn success_response<T: Serialize>(data: T) -> Response {
+    let body = serde_json::to_string(&data)
+        .unwrap_or_else(|_| "{\"success\":false,\"error\":\"Internal serialization error\"}".to_string());
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(body)
+}
+
+
+fn error_response(message: &str) -> Response {
+    let body = serde_json::to_string(&ApiResponse::Error {
+        success: false,
+        error: message.to_string(),
+    }).unwrap_or_else(|_| "{\"success\":false,\"error\":\"Internal serialization error\"}".to_string());
+
+    Response::builder()
+        .status(StatusCode::BAD_REQUEST)
+        .body(body)
+}
+
 #[handler]
-fn generate_keypair() -> PoemResult<Json<ApiResponse>> {
+fn generate_keypair() -> PoemResult<Response> {
     match std::panic::catch_unwind(|| {
         let keypair = Keypair::new();
         let secret_bytes = keypair.to_bytes();
-        
-        KeypairResponse {
+        let response = KeypairResponse {
             pubkey: keypair.pubkey().to_string(),
             secret: secret_bytes.to_base58(),
-        }
+        };
+        success_response(ApiResponse::Success {
+            success: true,
+            data: response,
+        })
     }) {
-        Ok(response) => {
-            Ok(Json(ApiResponse::Success {
-                success: true,
-                data: response,
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to generate keypair".to_string(),
-            }))
-        }
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to create keypair")),
     }
 }
 
@@ -222,59 +236,31 @@ fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiR
     }
 }
 #[handler]
-fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiResponse>> {
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Parse mint pubkey
+fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Response> {
+    match std::panic::catch_unwind(|| {
         let mint = match SolanaPubkey::from_str(&payload.mint) {
             Ok(pubkey) => pubkey,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid mint pubkey".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid mint pubkey"),
         };
-
-        // Parse destination pubkey
         let destination = match SolanaPubkey::from_str(&payload.destination) {
             Ok(pubkey) => pubkey,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid destination pubkey".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid destination pubkey"),
         };
-
-        // Parse authority pubkey
         let authority = match SolanaPubkey::from_str(&payload.authority) {
             Ok(pubkey) => pubkey,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid authority pubkey".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid authority pubkey"),
         };
-
-        // Build mint_to instruction
         let instruction = match token_instruction::mint_to(
             &TOKEN_PROGRAM_ID,
             &mint,
             &destination,
             &authority,
-            &[], // signer pubkeys
+            &[],
             payload.amount,
         ) {
             Ok(instr) => instr,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Failed to create mint token instruction".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Failed to create mint token instruction"),
         };
-
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
             AccountMetaResponse {
                 pubkey: account.pubkey.to_string(),
@@ -282,23 +268,18 @@ fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiRespo
                 is_writable: account.is_writable,
             }
         }).collect();
-
         let instruction_data = base64::encode(&instruction.data);
-
-        Ok(Json(ApiResponse::TokenMintSuccess {
+        success_response(ApiResponse::TokenMintSuccess {
             success: true,
             data: TokenMintResponse {
                 program_id: instruction.program_id.to_string(),
                 accounts,
                 instruction_data,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to create mint token instruction".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to create mint token instruction")),
     }
 }
 #[handler]
