@@ -288,8 +288,8 @@ async fn main() -> Result<(), std::io::Error> {
         .at("/token/mint", post(mint_token))
         .at("/message/sign", post(sign_message));
 
-    println!("running at http://0.0.0.0:80");
-    Server::new(TcpListener::bind("0.0.0.0:80"))
+    println!("running at http://0.0.0.0:3000");
+    Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("solana-api")
         .run(app)
         .await
