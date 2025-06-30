@@ -259,10 +259,22 @@ fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Response> {
     }
 }
 
+fn check_missing_fields(fields: &[(&str, &str)]) -> Option<Response> {
+    for (name, value) in fields {
+        if value.trim().is_empty() {
+            return Some(error_response("Missing required fields"));
+        }
+    }
+    None
+}
+
 #[handler]
 fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Response> {
-    if payload.message.is_empty() || payload.secret.is_empty() {
-        return Ok(error_response("Missing required fields"));
+    if let Some(resp) = check_missing_fields(&[
+        ("message", &payload.message),
+        ("secret", &payload.secret),
+    ]) {
+        return Ok(resp);
     }
     match std::panic::catch_unwind(|| {
         let secret_bytes = match payload.secret.from_base58() {
@@ -294,8 +306,12 @@ fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Response>
 
 #[handler]
 fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Response> {
-    if payload.message.is_empty() || payload.signature.is_empty() || payload.pubkey.is_empty() {
-        return Ok(error_response("Missing required fields"));
+    if let Some(resp) = check_missing_fields(&[
+        ("message", &payload.message),
+        ("signature", &payload.signature),
+        ("pubkey", &payload.pubkey),
+    ]) {
+        return Ok(resp);
     }
 
     match std::panic::catch_unwind(|| {
@@ -333,8 +349,14 @@ fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Respo
 
 #[handler]
 fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Response> {
-    if payload.from.is_empty() || payload.to.is_empty() || payload.lamports == 0 {
-        return Ok(error_response("Missing required fields or invalid amount"));
+    if let Some(resp) = check_missing_fields(&[
+        ("from", &payload.from),
+        ("to", &payload.to),
+    ]) {
+        return Ok(resp);
+    }
+    if payload.lamports == 0 {
+        return Ok(error_response("Invalid amount"));
     }
 
     match std::panic::catch_unwind(|| {
@@ -376,8 +398,15 @@ fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Response> {
 
 #[handler]
 fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Response> {
-    if payload.destination.is_empty() || payload.mint.is_empty() || payload.owner.is_empty() || payload.amount == 0 {
-        return Ok(error_response("Missing required fields or invalid amount"));
+    if let Some(resp) = check_missing_fields(&[
+        ("destination", &payload.destination),
+        ("mint", &payload.mint),
+        ("owner", &payload.owner),
+    ]) {
+        return Ok(resp);
+    }
+    if payload.amount == 0 {
+        return Ok(error_response("Invalid amount"));
     }
 
     match std::panic::catch_unwind(|| {
