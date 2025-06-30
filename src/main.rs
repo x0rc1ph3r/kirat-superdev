@@ -31,7 +31,7 @@ pub struct KeypairResponse {
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateTokenRequest {
-    pub mint_authority: String,
+    pub mintAuthority: String,
     pub mint: String,
     pub decimals: u8,
 }
@@ -154,10 +154,10 @@ fn generate_keypair() -> PoemResult<Json<ApiResponse>> {
 
 #[handler]
 fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiResponse>> {
-    info!("Creating token: mint = {}, authority = {}", payload.mint, payload.mint_authority);
+    info!("Creating token: mint = {}, authority = {}", payload.mint, payload.mintAuthority);
     match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
         // Parse mint_authority
-        let mint_authority = match SolanaPubkey::from_str(&payload.mint_authority) {
+        let mint_authority = match SolanaPubkey::from_str(&payload.mintAuthority) {
             Ok(pubkey) => pubkey,
             Err(_) => {
                 return Ok(Json(ApiResponse::Error {
