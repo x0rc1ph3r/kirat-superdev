@@ -20,6 +20,8 @@ use spl_associated_token_account;
 use base58::{ToBase58, FromBase58};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use tracing::{info, error};
+use tracing_subscriber;
 
 #[derive(Serialize, Deserialize)]
 pub struct KeypairResponse {
@@ -152,6 +154,7 @@ fn generate_keypair() -> PoemResult<Json<ApiResponse>> {
 
 #[handler]
 fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiResponse>> {
+    info!("Creating token: mint = {}, authority = {}", payload.mint, payload.mint_authority);
     match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
         // Parse mint_authority
         let mint_authority = match SolanaPubkey::from_str(&payload.mint_authority) {
