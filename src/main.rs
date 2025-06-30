@@ -152,19 +152,45 @@ fn generate_keypair() -> PoemResult<Json<ApiResponse>> {
 
 #[handler]
 fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiResponse>> {
-    match std::panic::catch_unwind(|| -> Result<TokenCreateResponse, String> {
-        let mint_authority = SolanaPubkey::from_str(&payload.mint_authority)
-            .map_err(|_| "Invalid mint authority pubkey".to_string())?;
-        let mint = SolanaPubkey::from_str(&payload.mint)
-            .map_err(|_| "Invalid mint pubkey".to_string())?;
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
+        // Parse mint_authority
+        let mint_authority = match SolanaPubkey::from_str(&payload.mint_authority) {
+            Ok(pubkey) => pubkey,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid mint authority pubkey".to_string(),
+                }));
+            }
+        };
 
-        let instruction = token_instruction::initialize_mint(
+        // Parse mint
+        let mint = match SolanaPubkey::from_str(&payload.mint) {
+            Ok(pubkey) => pubkey,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid mint pubkey".to_string(),
+                }));
+            }
+        };
+
+        // Create initialize_mint instruction
+        let instruction = match token_instruction::initialize_mint(
             &TOKEN_PROGRAM_ID,
             &mint,
             &mint_authority,
             None, // freeze_authority
             payload.decimals,
-        ).map_err(|_| "Failed to create initialize mint instruction".to_string())?;
+        ) {
+            Ok(instr) => instr,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Failed to create token instruction".to_string(),
+                }));
+            }
+        };
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
             AccountMetaResponse {
@@ -176,51 +202,75 @@ fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiR
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(TokenCreateResponse {
-            program_id: instruction.program_id.to_string(),
-            accounts,
-            instruction_data,
-        })
+        Ok(Json(ApiResponse::TokenSuccess {
+            success: true,
+            data: TokenCreateResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::TokenSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg.to_string(),
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to create token instruction".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to create token instruction".to_string(),
+        })),
     }
 }
-
 #[handler]
 fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiResponse>> {
-    match std::panic::catch_unwind(|| -> Result<TokenMintResponse, String> {
-        let mint = SolanaPubkey::from_str(&payload.mint)
-            .map_err(|_| "Invalid mint pubkey".to_string())?;
-        let destination = SolanaPubkey::from_str(&payload.destination)
-            .map_err(|_| "Invalid destination pubkey".to_string())?;
-        let authority = SolanaPubkey::from_str(&payload.authority)
-            .map_err(|_| "Invalid authority pubkey".to_string())?;
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
+        // Parse mint pubkey
+        let mint = match SolanaPubkey::from_str(&payload.mint) {
+            Ok(pubkey) => pubkey,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid mint pubkey".to_string(),
+                }));
+            }
+        };
 
-        let instruction = token_instruction::mint_to(
+        // Parse destination pubkey
+        let destination = match SolanaPubkey::from_str(&payload.destination) {
+            Ok(pubkey) => pubkey,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid destination pubkey".to_string(),
+                }));
+            }
+        };
+
+        // Parse authority pubkey
+        let authority = match SolanaPubkey::from_str(&payload.authority) {
+            Ok(pubkey) => pubkey,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid authority pubkey".to_string(),
+                }));
+            }
+        };
+
+        // Build mint_to instruction
+        let instruction = match token_instruction::mint_to(
             &TOKEN_PROGRAM_ID,
             &mint,
             &destination,
             &authority,
-            &[],
+            &[], // signer pubkeys
             payload.amount,
-        ).map_err(|_| "Failed to create mint-to instruction".to_string())?;
+        ) {
+            Ok(instr) => instr,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Failed to create mint token instruction".to_string(),
+                }));
+            }
+        };
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
             AccountMetaResponse {
@@ -232,33 +282,22 @@ fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiRespo
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(TokenMintResponse {
-            program_id: instruction.program_id.to_string(),
-            accounts,
-            instruction_data,
-        })
+        Ok(Json(ApiResponse::TokenMintSuccess {
+            success: true,
+            data: TokenMintResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::TokenMintSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg.to_string(),
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to create mint token instruction".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to create mint token instruction".to_string(),
+        })),
     }
 }
-
 #[handler]
 fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Json<ApiResponse>> {
     // Check for missing fields
@@ -269,51 +308,57 @@ fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Json<ApiR
         }));
     }
 
-    match std::panic::catch_unwind(|| -> Result<SignMessageResponse, String> {
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
         // Decode the base58 secret key
-        let secret_bytes = payload.secret.from_base58()
-            .map_err(|_| "Invalid base58 secret key".to_string())?;
-        
+        let secret_bytes = match payload.secret.from_base58() {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid base58 secret key".to_string(),
+                }));
+            }
+        };
+
         // Ensure the secret key is exactly 64 bytes
         if secret_bytes.len() != 64 {
-            return Err("Invalid secret key length".to_string());
+            return Ok(Json(ApiResponse::Error {
+                success: false,
+                error: "Invalid secret key length".to_string(),
+            }));
         }
 
         // Create keypair from secret bytes
-        let keypair = Keypair::from_bytes(&secret_bytes)
-            .map_err(|_| "Failed to create keypair from secret".to_string())?;
+        let keypair = match Keypair::from_bytes(&secret_bytes) {
+            Ok(kp) => kp,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Failed to create keypair from secret".to_string(),
+                }));
+            }
+        };
 
         // Sign the message
         let message_bytes = payload.message.as_bytes();
         let signature = keypair.sign_message(message_bytes);
 
-        Ok(SignMessageResponse {
-            signature: base64::encode(&signature.as_ref()),
-            public_key: keypair.pubkey().to_string(),
-            message: payload.message,
-        })
+        Ok(Json(ApiResponse::SignMessageSuccess {
+            success: true,
+            data: SignMessageResponse {
+                signature: base64::encode(signature.as_ref()),
+                public_key: keypair.pubkey().to_string(),
+                message: payload.message,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::SignMessageSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg,
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to sign message".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to sign message".to_string(),
+        })),
     }
 }
-
 #[handler]
 fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Json<ApiResponse>> {
     // Check for missing fields
@@ -324,53 +369,63 @@ fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Json<
         }));
     }
 
-    match std::panic::catch_unwind(|| -> Result<VerifyMessageResponse, String> {
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
         // Decode the base58 public key
-        let pubkey = SolanaPubkey::from_str(&payload.pubkey)
-            .map_err(|_| "Invalid public key".to_string())?;
+        let pubkey = match SolanaPubkey::from_str(&payload.pubkey) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid public key".to_string(),
+                }));
+            }
+        };
 
         // Decode the base64 signature
-        let signature_bytes = base64::decode(&payload.signature)
-            .map_err(|_| "Invalid base64 signature".to_string())?;
+        let signature_bytes = match base64::decode(&payload.signature) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid base64 signature".to_string(),
+                }));
+            }
+        };
 
         // Create signature from bytes
-        let signature = Signature::try_from(signature_bytes.as_slice())
-            .map_err(|_| "Invalid signature format".to_string())?;
+        let signature = match Signature::try_from(signature_bytes.as_slice()) {
+            Ok(sig) => sig,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid signature format".to_string(),
+                }));
+            }
+        };
 
         // Verify the signature
         let message_bytes = payload.message.as_bytes();
         let is_valid = signature.verify(&pubkey.as_ref(), message_bytes);
 
-        Ok(VerifyMessageResponse {
-            valid: is_valid,
-            message: payload.message,
-            pubkey: payload.pubkey,
-        })
+        Ok(Json(ApiResponse::VerifyMessageSuccess {
+            success: true,
+            data: VerifyMessageResponse {
+                valid: is_valid,
+                message: payload.message,
+                pubkey: payload.pubkey,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::VerifyMessageSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg,
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to verify message".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to verify message".to_string(),
+        })),
     }
 }
-
 #[handler]
 fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Json<ApiResponse>> {
-    // Check for missing fields and valid inputs
+    // Check for missing fields and valid amount
     if payload.from.is_empty() || payload.to.is_empty() || payload.lamports == 0 {
         return Ok(Json(ApiResponse::Error {
             success: false,
@@ -378,14 +433,30 @@ fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Json<ApiResponse>
         }));
     }
 
-    match std::panic::catch_unwind(|| -> Result<TransferResponse, String> {
-        // Parse public keys
-        let from_pubkey = SolanaPubkey::from_str(&payload.from)
-            .map_err(|_| "Invalid from address".to_string())?;
-        let to_pubkey = SolanaPubkey::from_str(&payload.to)
-            .map_err(|_| "Invalid to address".to_string())?;
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
+        // Parse from pubkey
+        let from_pubkey = match SolanaPubkey::from_str(&payload.from) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid from address".to_string(),
+                }));
+            }
+        };
 
-        // Create transfer instruction
+        // Parse to pubkey
+        let to_pubkey = match SolanaPubkey::from_str(&payload.to) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid to address".to_string(),
+                }));
+            }
+        };
+
+        // Create the transfer instruction
         let instruction = system_instruction::transfer(&from_pubkey, &to_pubkey, payload.lamports);
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
@@ -398,33 +469,22 @@ fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Json<ApiResponse>
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(TransferResponse {
-            program_id: instruction.program_id.to_string(),
-            accounts,
-            instruction_data,
-        })
+        Ok(Json(ApiResponse::TransferSuccess {
+            success: true,
+            data: TransferResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::TransferSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg,
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to create SOL transfer instruction".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to create SOL transfer instruction".to_string(),
+        })),
     }
 }
-
 #[handler]
 fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiResponse>> {
     // Check for missing fields and valid inputs
@@ -435,28 +495,61 @@ fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiRespo
         }));
     }
 
-    match std::panic::catch_unwind(|| -> Result<TransferResponse, String> {
-        // Parse public keys
-        let mint = SolanaPubkey::from_str(&payload.mint)
-            .map_err(|_| "Invalid mint address".to_string())?;
-        let owner = SolanaPubkey::from_str(&payload.owner)
-            .map_err(|_| "Invalid owner address".to_string())?;
-        let destination = SolanaPubkey::from_str(&payload.destination)
-            .map_err(|_| "Invalid destination address".to_string())?;
+    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
+        // Parse mint
+        let mint = match SolanaPubkey::from_str(&payload.mint) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid mint address".to_string(),
+                }));
+            }
+        };
 
-        // Derive associated token accounts
+        // Parse owner
+        let owner = match SolanaPubkey::from_str(&payload.owner) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid owner address".to_string(),
+                }));
+            }
+        };
+
+        // Parse destination
+        let destination = match SolanaPubkey::from_str(&payload.destination) {
+            Ok(pk) => pk,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Invalid destination address".to_string(),
+                }));
+            }
+        };
+
+        // Derive ATAs
         let source_ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
         let destination_ata = spl_associated_token_account::get_associated_token_address(&destination, &mint);
 
         // Create transfer instruction
-        let instruction = token_instruction::transfer(
+        let instruction = match token_instruction::transfer(
             &TOKEN_PROGRAM_ID,
             &source_ata,
             &destination_ata,
             &owner,
             &[],
             payload.amount,
-        ).map_err(|_| "Failed to create token transfer instruction".to_string())?;
+        ) {
+            Ok(instr) => instr,
+            Err(_) => {
+                return Ok(Json(ApiResponse::Error {
+                    success: false,
+                    error: "Failed to create token transfer instruction".to_string(),
+                }));
+            }
+        };
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
             AccountMetaResponse {
@@ -468,30 +561,20 @@ fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiRespo
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(TransferResponse {
-            program_id: instruction.program_id.to_string(),
-            accounts,
-            instruction_data,
-        })
+        Ok(Json(ApiResponse::TransferSuccess {
+            success: true,
+            data: TransferResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data,
+            },
+        }))
     }) {
-        Ok(Ok(response)) => {
-            Ok(Json(ApiResponse::TransferSuccess {
-                success: true,
-                data: response,
-            }))
-        }
-        Ok(Err(error_msg)) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: error_msg,
-            }))
-        }
-        Err(_) => {
-            Ok(Json(ApiResponse::Error {
-                success: false,
-                error: "Failed to create token transfer instruction".to_string(),
-            }))
-        }
+        Ok(result) => result,
+        Err(_) => Ok(Json(ApiResponse::Error {
+            success: false,
+            error: "Failed to create token transfer instruction".to_string(),
+        })),
     }
 }
 
