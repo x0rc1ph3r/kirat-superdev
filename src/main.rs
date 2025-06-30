@@ -289,7 +289,7 @@ fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Json<ApiR
 
         Ok(SignMessageResponse {
             signature: base64::encode(&signature.as_ref()),
-            public_key: keypair.pubkey().to_base58(),
+            public_key: keypair.pubkey().to_string(),
             message: payload.message,
         })
     }) {
