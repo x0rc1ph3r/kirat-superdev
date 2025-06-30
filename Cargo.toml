@@ -4,15 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.38", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "1.0"
-solana-sdk = "1.18"
+# Web framework
+poem = { version = "3.0", features = ["compression"] }
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Solana dependencies - use compatible versions
+solana-sdk = "2.2"
+solana-client = "2.2"
+
+# SPL Token dependencies - use compatible versions
+spl-token = "6.0"
+spl-associated-token-account = "4.0"
+
+# Encoding
 base58 = "0.2"
-poem = "3.1.11"
-axum = "0.8.4"
-hyper = "1.6.0"
-base64 = "0.22.1"
-spl-token = "8.0.0"
-spl-associated-token-account = "7.0.0"
+base64 = "0.22"
+
+# Error handling
+anyhow = "1.0"

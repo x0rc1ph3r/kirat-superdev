@@ -14,9 +14,7 @@ use solana_sdk::{
 };
 use spl_token::{
     instruction as token_instruction, 
-    solana_program::pubkey::Pubkey, 
     ID as TOKEN_PROGRAM_ID,
-    state::Account as TokenAccount,
 };
 use spl_associated_token_account;
 use base58::{ToBase58, FromBase58};
@@ -155,9 +153,9 @@ fn generate_keypair() -> PoemResult<Json<ApiResponse>> {
 #[handler]
 fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiResponse>> {
     match std::panic::catch_unwind(|| -> Result<TokenCreateResponse, String> {
-        let mint_authority = Pubkey::from_str(&payload.mint_authority)
+        let mint_authority = SolanaPubkey::from_str(&payload.mint_authority)
             .map_err(|_| "Invalid mint authority pubkey".to_string())?;
-        let mint = Pubkey::from_str(&payload.mint)
+        let mint = SolanaPubkey::from_str(&payload.mint)
             .map_err(|_| "Invalid mint pubkey".to_string())?;
 
         let instruction = token_instruction::initialize_mint(
@@ -208,11 +206,11 @@ fn create_token(Json(payload): Json<CreateTokenRequest>) -> PoemResult<Json<ApiR
 #[handler]
 fn mint_token(Json(payload): Json<MintTokenRequest>) -> PoemResult<Json<ApiResponse>> {
     match std::panic::catch_unwind(|| -> Result<TokenMintResponse, String> {
-        let mint = Pubkey::from_str(&payload.mint)
+        let mint = SolanaPubkey::from_str(&payload.mint)
             .map_err(|_| "Invalid mint pubkey".to_string())?;
-        let destination = Pubkey::from_str(&payload.destination)
+        let destination = SolanaPubkey::from_str(&payload.destination)
             .map_err(|_| "Invalid destination pubkey".to_string())?;
-        let authority = Pubkey::from_str(&payload.authority)
+        let authority = SolanaPubkey::from_str(&payload.authority)
             .map_err(|_| "Invalid authority pubkey".to_string())?;
 
         let instruction = token_instruction::mint_to(
@@ -439,11 +437,11 @@ fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiRespo
 
     match std::panic::catch_unwind(|| -> Result<TransferResponse, String> {
         // Parse public keys
-        let mint = Pubkey::from_str(&payload.mint)
+        let mint = SolanaPubkey::from_str(&payload.mint)
             .map_err(|_| "Invalid mint address".to_string())?;
-        let owner = Pubkey::from_str(&payload.owner)
+        let owner = SolanaPubkey::from_str(&payload.owner)
             .map_err(|_| "Invalid owner address".to_string())?;
-        let destination = Pubkey::from_str(&payload.destination)
+        let destination = SolanaPubkey::from_str(&payload.destination)
             .map_err(|_| "Invalid destination address".to_string())?;
 
         // Derive associated token accounts
@@ -508,13 +506,13 @@ fn home() -> String {
 async fn main() -> Result<(), std::io::Error> {
     let app = Route::new()
         .at("/", get(home))
-        .at("/keypair", post(generate_keypair))
+        .at("/generate_keypair", post(generate_keypair))
         .at("/token/create", post(create_token))
         .at("/token/mint", post(mint_token))
         .at("/message/sign", post(sign_message))
         .at("/message/verify", post(verify_message))
         .at("/send/sol", post(send_sol))
-        .at(" /send/token", post(send_token));
+        .at("/send/token", post(send_token));
 
     println!("running at http://0.0.0.0:3000");
     Server::new(TcpListener::bind("0.0.0.0:3000"))
