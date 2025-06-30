@@ -5,6 +5,7 @@ use poem::{
     web::{Json},
     Result as PoemResult,
 };
+use poem::endpoint::EndpointExt;
 use poem::http::StatusCode;
 use poem::Response;
 use solana_sdk::{
@@ -292,103 +293,61 @@ fn sign_message(Json(payload): Json<SignMessageRequest>) -> PoemResult<Response>
 }
 
 #[handler]
-fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Json<ApiResponse>> {
-    // Check for missing fields
+fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> PoemResult<Response> {
     if payload.message.is_empty() || payload.signature.is_empty() || payload.pubkey.is_empty() {
-        return Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Missing required fields".to_string(),
-        }));
+        return Ok(error_response("Missing required fields"));
     }
 
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Decode the base58 public key
+    match std::panic::catch_unwind(|| {
         let pubkey = match SolanaPubkey::from_str(&payload.pubkey) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid public key".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid public key"),
         };
 
-        // Decode the base64 signature
         let signature_bytes = match base64::decode(&payload.signature) {
             Ok(bytes) => bytes,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid base64 signature".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid base64 signature"),
         };
 
-        // Create signature from bytes
         let signature = match Signature::try_from(signature_bytes.as_slice()) {
             Ok(sig) => sig,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid signature format".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid signature format"),
         };
 
-        // Verify the signature
         let message_bytes = payload.message.as_bytes();
         let is_valid = signature.verify(&pubkey.as_ref(), message_bytes);
 
-        Ok(Json(ApiResponse::VerifyMessageSuccess {
+        success_response(ApiResponse::VerifyMessageSuccess {
             success: true,
             data: VerifyMessageResponse {
                 valid: is_valid,
                 message: payload.message,
                 pubkey: payload.pubkey,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to verify message".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to verify message")),
     }
 }
+
 #[handler]
-fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Json<ApiResponse>> {
-    // Check for missing fields and valid amount
+fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Response> {
     if payload.from.is_empty() || payload.to.is_empty() || payload.lamports == 0 {
-        return Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Missing required fields or invalid amount".to_string(),
-        }));
+        return Ok(error_response("Missing required fields or invalid amount"));
     }
 
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Parse from pubkey
+    match std::panic::catch_unwind(|| {
         let from_pubkey = match SolanaPubkey::from_str(&payload.from) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid from address".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid from address"),
         };
 
-        // Parse to pubkey
         let to_pubkey = match SolanaPubkey::from_str(&payload.to) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid to address".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid to address"),
         };
 
-        // Create the transfer instruction
         let instruction = system_instruction::transfer(&from_pubkey, &to_pubkey, payload.lamports);
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
@@ -401,71 +360,45 @@ fn send_sol(Json(payload): Json<SendSolRequest>) -> PoemResult<Json<ApiResponse>
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(Json(ApiResponse::TransferSuccess {
+        success_response(ApiResponse::TransferSuccess {
             success: true,
             data: TransferResponse {
                 program_id: instruction.program_id.to_string(),
                 accounts,
                 instruction_data,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to create SOL transfer instruction".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to create SOL transfer instruction")),
     }
 }
+
 #[handler]
-fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiResponse>> {
-    // Check for missing fields and valid inputs
+fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Response> {
     if payload.destination.is_empty() || payload.mint.is_empty() || payload.owner.is_empty() || payload.amount == 0 {
-        return Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Missing required fields or invalid amount".to_string(),
-        }));
+        return Ok(error_response("Missing required fields or invalid amount"));
     }
 
-    match std::panic::catch_unwind(|| -> PoemResult<Json<ApiResponse>> {
-        // Parse mint
+    match std::panic::catch_unwind(|| {
         let mint = match SolanaPubkey::from_str(&payload.mint) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid mint address".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid mint address"),
         };
 
-        // Parse owner
         let owner = match SolanaPubkey::from_str(&payload.owner) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid owner address".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid owner address"),
         };
 
-        // Parse destination
         let destination = match SolanaPubkey::from_str(&payload.destination) {
             Ok(pk) => pk,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Invalid destination address".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Invalid destination address"),
         };
 
-        // Derive ATAs
         let source_ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
         let destination_ata = spl_associated_token_account::get_associated_token_address(&destination, &mint);
 
-        // Create transfer instruction
         let instruction = match token_instruction::transfer(
             &TOKEN_PROGRAM_ID,
             &source_ata,
@@ -475,12 +408,7 @@ fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiRespo
             payload.amount,
         ) {
             Ok(instr) => instr,
-            Err(_) => {
-                return Ok(Json(ApiResponse::Error {
-                    success: false,
-                    error: "Failed to create token transfer instruction".to_string(),
-                }));
-            }
+            Err(_) => return error_response("Failed to create token transfer instruction"),
         };
 
         let accounts: Vec<AccountMetaResponse> = instruction.accounts.iter().map(|account| {
@@ -493,20 +421,17 @@ fn send_token(Json(payload): Json<SendTokenRequest>) -> PoemResult<Json<ApiRespo
 
         let instruction_data = base64::encode(&instruction.data);
 
-        Ok(Json(ApiResponse::TransferSuccess {
+        success_response(ApiResponse::TransferSuccess {
             success: true,
             data: TransferResponse {
                 program_id: instruction.program_id.to_string(),
                 accounts,
                 instruction_data,
             },
-        }))
+        })
     }) {
-        Ok(result) => result,
-        Err(_) => Ok(Json(ApiResponse::Error {
-            success: false,
-            error: "Failed to create token transfer instruction".to_string(),
-        })),
+        Ok(resp) => Ok(resp),
+        Err(_) => Ok(error_response("Failed to create token transfer instruction")),
     }
 }
 

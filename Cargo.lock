@@ -3335,6 +3335,7 @@ name = "solana-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base58",
  "base64 0.22.1",
  "poem",
